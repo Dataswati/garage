@@ -1,4 +1,4 @@
-#Files
+# Files
 * `scripts/kc_house_data.csv`
 Data for training.
 * `scripts/prediction.py`
