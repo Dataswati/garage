@@ -3,12 +3,12 @@ from flask import Flask, jsonify, request
 # from PowerOP.interfaces.Diag import InterfaceDiag
 
 import json
-from prediction import prediction
+from prediction import predict
 
 
 HEADERS = {'Content-type': 'application/json', 'Accept': 'text/plain'}
 
-def flask_app(url):
+def flask_app():
     app = Flask(__name__)
 
 
@@ -22,11 +22,12 @@ def flask_app(url):
         to_predict = request.json
 
         print(to_predict)
-	pred = prediction(to_predict)
-        return "predict cost : %s"%(pred,)
+        pred = predict(to_predict)
+        return "predict cost : %s\n"%(pred,)
     return app
 
 if __name__ == '__main__':
+    app = flask_app()
     app.run(debug=True, host='0.0.0.0')
 
 
