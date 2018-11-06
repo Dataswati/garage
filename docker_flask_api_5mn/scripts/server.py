@@ -23,7 +23,7 @@ def flask_app():
 
         print(to_predict)
         pred = predict(to_predict)
-        return "predict cost : %s\n"%(pred,)
+        return jsonify({"predict cost":pred})
     return app
 
 if __name__ == '__main__':
