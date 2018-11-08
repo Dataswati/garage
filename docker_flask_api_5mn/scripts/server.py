@@ -1,6 +1,5 @@
 import os
 from flask import Flask, jsonify, request
-# from PowerOP.interfaces.Diag import InterfaceDiag
 
 import json
 from prediction import predict
