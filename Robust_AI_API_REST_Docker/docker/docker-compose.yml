@@ -1,0 +1,19 @@
+version: "2"
+
+services:
+  flask:
+    build : .
+    volumes : 
+     - "../ai/:/srv/"
+     - "./src/:/src/"
+     - "../data/:/data/"
+     - "../log/surpervisor/:/var/log/supervisor/"
+     - "./supervisor-conf.d:/etc/supervisor/conf.d"
+    ports:
+     - 5000:5001
+#     - 5000:5000
+
+#    entrypoint: bash
+#    stdin_open: true
+#    tty: true
+    
