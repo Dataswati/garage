@@ -12,11 +12,24 @@ from redisQworker import conn
 
 from model import train, predict
 import config
+import datetime
 
+id_time_format = "%Y-%m-%d %H:%M:%S"
 train_job_id = "train_job"
+train_new_job_id = "new_train_job"
 log = logging.getLogger(__name__)
 q_train = Queue(connection=conn, name='train')
 registr_train = StartedJobRegistry('train', connection=conn)
+
+def init_time_id(id_time_format=id_time_format):
+    return datetime.datetime.utcnow().strftime(id_time_format)
+
+def sort_id_time(list_id_time, id_time_format=id_time_format):
+    list_datetime = [datetime.datetime.strptime(x,id_time_format)
+            for x in list_id_time]
+    list_datetime = sorted(list_datetime)
+    sorted_list = [x.strftime(id_time_format) for x in list_datetime]
+    return sorted_list
 
 
 # create dedicated namespace for GAN client
@@ -85,63 +98,126 @@ class Train(Resource):
         if not ("restart_train" in input_json.keys()):
             restart_train=False
         else :
-            restart_train = input_json["input_columns"]
+            restart_train = input_json["restart_train"]
 
         job = q_train.fetch_job(train_job_id)
-        if not (job is None):
+        job_new = q_train.fetch_job(train_new_job_id)
+
+        # 4 case posible :
+        # * start job
+        # * start new job
+        # * move new job to job and start new
+        # * delete new and start new
+        def job_trained(job):
             if job.get_status() in ['started','queued']:
-                job_finish=False
+                return False
             else:
-                job_finish=True
-        else:
-            job_finish=True
-        if (not restart_train) and (not job_finish):
+                return True 
+
+        if job is None :
+            # case start job
+            job_train = q_train.enqueue(train,
+                    job_id=train_job_id,args=(csv_path,),
+                kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
+        elif job_new is None:
+            # case start new job
+            job_train = q_train.enqueue(train,
+                    job_id=train_new_job_id,args=(csv_path,),
+                    kwargs={'target':target,
+                            'input_columns':input_columns},
+                    result_ttl=-1)
+        elif job_trained(job_new):
+            #case move new job to job and start new
+            job.delete()
+            job_new.set_id(train_job_id)
+            job_train = q_train.enqueue(train,
+                    job_id=train_new_job_id, args=(csv_path,),
+                    kwargs={'target':target,
+                            'input_columns':input_columns},
+                    result_ttl=-1)
+        elif restart_train :
+            # case delete new and start new
+            job_new.delete()
+            job_train = q_train.enqueue(train,job_id=train_new_job_id,args=(csv_path,),
+                kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
+        else :
             return {'status':'ko',
                     'comment':'previous training not finished'},401
-        elif not job_finish:
-            job.delete()
 
-        log.info("/train start the train")
-#         best_test_score, best_pipeline, input_columns = train(csv_path,
-#                         target=target,input_columns=input_columns)
-        job_train = q_train.enqueue(train,job_id=train_job_id,args=(csv_path,),
-                kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
-        # session["input_columns"] = input_columns
-        # data.input_columns = input_columns
-        # joblib.dump(best_pipeline, dumped_pipeline)
-        # log.info("/train model dumped")
-    
-        # session["is_train"]="True"
-        # data.is_train = True
 
-        # kwargs = json_decode["content"]
-        # id = json_decode["id"]
+        # log.info("/train start the train")
         log.info("input : ")
         log.info(repr(input_json))
-        # start now
-        # job_diag = q_diag.enqueue(to_execute,kwargs)
-        # job_diag_id = job_diag.get_id()
-
         return {'status':'ok'}, 200
     def get(self):
 
         job = q_train.fetch_job(train_job_id)
+        job_new = q_train.fetch_job(train_new_job_id)
+        print("job ",job)
+        print("job_new ",job_new)
         if job is None :
-            return{'status':"ok","train_status":"not_trained"}, 200
+            return{'status':"ok",
+                    "training":False,
+                   "model_available":False}, 200
+        elif job.get_status() in ['started','queued']:
+            return {'status':"ok",
+                    'training':True,
+                    'model_available':False}, 200
+        elif job_new is None :
+            return {'status':"ok",
+                    'training':False,
+                    'model_available':True}, 200
+        elif job_new.get_status() in ['started','queued']:
+            return {'status':"ok",
+                    'training':True,
+                    'model_available':True}, 200
         else :
             return {'status':"ok",
-                    'train_status':job.get_status(),
-                    'train_exec_info':job.exc_info}, 200
+                    'training':False,
+                    'model_available':True}, 200
+
+
+
+
 
     def delete(self):
 
         job = q_train.fetch_job(train_job_id)
+        job_new = q_train.fetch_job(train_new_job_id)
+        to_return = {"status":'ok',
+                'number_delete_model':sum([not (job is None),
+                    not (job_new is None)])}
         if not (job is None):
             job.delete()
-            return {'status':'ok'},200
-        else :
-            return {'status':'ko','comment':'no train to delete'},401
+        if not (job_new is None):
+            job_new.delete()
+        
+        return to_return, 200
 
+def get_job():
+    job = q_train.fetch_job(train_job_id)
+    job_new = q_train.fetch_job(train_new_job_id)
+    if not (job_new is None):
+        if not (job_new.get_status() in ['started','queued']):
+            job_finish=True
+            job.delete()
+            job_new.set_id(train_job_id)
+            job = job_new
+        elif job.get_status() in ['started','queued']:
+            job_finish=False
+        else :
+            job_finish=True
+
+
+
+    elif not (job is None):
+        if job.get_status() in ['started','queued']:
+            job_finish=False
+        else:
+            job_finish=True
+    else:
+        job_finish=False
+    return job, job_finish
 
 @ns.route('/predict')
 class Predict(Resource):
@@ -171,18 +247,11 @@ class Predict(Resource):
         """
         to_predict = request.json
         log.info("predict input : \n %s"%(repr(to_predict),))
-        job = q_train.fetch_job(train_job_id)
-        if not (job is None):
-            if job.get_status() in ['started','queued']:
-                job_finish=False
-            else:
-                job_finish=True
-        else:
-            job_finish=True
+        job, job_finish = get_job()
 
         if not job_finish :
             log.bug("/predict : not trained yet")
-            return jsonify({'status':'ko', 'comment':'not trained yet'}), 401
+            return {'status':'ko', 'comment':'not trained yet'}, 401
 
         best_test_score, pipeline, input_columns= job.result
         pred = predict(to_predict, input_columns=input_columns,
@@ -192,21 +261,13 @@ class Predict(Resource):
         return {"status":"ok", "prediction":pred},200
         # return prediction
     def get(self):
-        job = q_train.fetch_job(train_job_id)
-        if not (job is None):
-            if job.get_status() in ['started','queued']:
-                job_finish=False
-            else:
-                job_finish=True
-        else:
-            job_finish=True
-
+        
+        job, job_finish = get_job()
         if not job_finish :
             log.bug("/predict : not trained yet")
             return jsonify({'status':'ko', 'comment':'not trained yet'}), 401
 
         best_test_score, pipeline, input_columns= job.result
 
-        return jsonify({'status':'OK','input_names':input_columns})
-        # return json sample
+        return {'status':'ok','input_names':input_columns},200
 
