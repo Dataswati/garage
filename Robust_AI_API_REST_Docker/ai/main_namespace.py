@@ -7,7 +7,7 @@ from flask_restplus import Resource, Namespace, reqparse
 
 from rq import Queue
 from rq.job import Job
-from rq.registry import StartedJobRegistry
+from rq.registry import StartedJobRegistry, FinishedJobRegistry
 from redisQworker import conn
 
 from model import train, predict
@@ -21,23 +21,23 @@ log = logging.getLogger(__name__)
 q_train = Queue(connection=conn, name='train')
 registr_train = StartedJobRegistry('train', connection=conn)
 
+started_registry = StartedJobRegistry('train',connection=conn)
+finished_registry = FinishedJobRegistry('train',connection=conn)
+
 def init_time_id(id_time_format=id_time_format):
     return datetime.datetime.utcnow().strftime(id_time_format)
 
-def sort_id_time(list_id_time, id_time_format=id_time_format):
+def sort_id_time(list_id_time, id_time_format=id_time_format, reverse=False):
     list_datetime = [datetime.datetime.strptime(x,id_time_format)
             for x in list_id_time]
-    list_datetime = sorted(list_datetime)
+    list_datetime = sorted(list_datetime, reverse=reverse)
     sorted_list = [x.strftime(id_time_format) for x in list_datetime]
     return sorted_list
 
 
-# create dedicated namespace for GAN client
 ns = Namespace('/', description='housing prediction')
 
 
-# Flask-RestPlus specific parser for image uploading
-# upload_parser = api.parser()
 upload_parser = reqparse.RequestParser()
 upload_parser.add_argument("input",
                            type=list,
@@ -100,124 +100,64 @@ class Train(Resource):
         else :
             restart_train = input_json["restart_train"]
 
-        job = q_train.fetch_job(train_job_id)
-        job_new = q_train.fetch_job(train_new_job_id)
-
-        # 4 case posible :
-        # * start job
-        # * start new job
-        # * move new job to job and start new
-        # * delete new and start new
-        def job_trained(job):
-            if job.get_status() in ['started','queued']:
-                return False
-            else:
-                return True 
-
-        if job is None :
-            # case start job
-            job_train = q_train.enqueue(train,
-                    job_id=train_job_id,args=(csv_path,),
+        job_train = q_train.enqueue(train,
+                    job_id=init_time_id(),args=(csv_path,),
                 kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
-        elif job_new is None:
-            # case start new job
-            job_train = q_train.enqueue(train,
-                    job_id=train_new_job_id,args=(csv_path,),
-                    kwargs={'target':target,
-                            'input_columns':input_columns},
-                    result_ttl=-1)
-        elif job_trained(job_new):
-            #case move new job to job and start new
-            job.delete()
-            job_new.set_id(train_job_id)
-            job_train = q_train.enqueue(train,
-                    job_id=train_new_job_id, args=(csv_path,),
-                    kwargs={'target':target,
-                            'input_columns':input_columns},
-                    result_ttl=-1)
-        elif restart_train :
-            # case delete new and start new
-            job_new.delete()
-            job_train = q_train.enqueue(train,job_id=train_new_job_id,args=(csv_path,),
-                kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
-        else :
-            return {'status':'ko',
-                    'comment':'previous training not finished'},401
-
-
-        # log.info("/train start the train")
-        log.info("input : ")
-        log.info(repr(input_json))
         return {'status':'ok'}, 200
+
     def get(self):
+        job_ids = q_train.get_job_ids() +\
+                started_registry.get_job_ids()+\
+                finished_registry.get_job_ids()
+        job_ids = list(set(job_ids))
+        #print(job_ids)
+        sorted_job_ids = sort_id_time(job_ids, reverse=True)
+        training = False
+        model_available = False
+        for job_id in sorted_job_ids :
+            job = q_train.fetch_job(job_id)
+            if job.get_status() in ['started','queued']:
+                training=True
+            else :
+                model_available=True
+                break
 
-        job = q_train.fetch_job(train_job_id)
-        job_new = q_train.fetch_job(train_new_job_id)
-        print("job ",job)
-        print("job_new ",job_new)
-        if job is None :
-            return{'status':"ok",
-                    "training":False,
-                   "model_available":False}, 200
-        elif job.get_status() in ['started','queued']:
-            return {'status':"ok",
-                    'training':True,
-                    'model_available':False}, 200
-        elif job_new is None :
-            return {'status':"ok",
-                    'training':False,
-                    'model_available':True}, 200
-        elif job_new.get_status() in ['started','queued']:
-            return {'status':"ok",
-                    'training':True,
-                    'model_available':True}, 200
-        else :
-            return {'status':"ok",
-                    'training':False,
-                    'model_available':True}, 200
-
-
-
+        return {'status':"ok",
+                'training' : training,
+                'model_available' : model_available,
+                'started_train' : started_registry.get_job_ids(),
+                'finished_train' : finished_registry.get_job_ids(),
+                'queued_train' : q_train.get_job_ids()}, 200
 
 
     def delete(self):
 
-        job = q_train.fetch_job(train_job_id)
-        job_new = q_train.fetch_job(train_new_job_id)
-        to_return = {"status":'ok',
-                'number_delete_model':sum([not (job is None),
-                    not (job_new is None)])}
-        if not (job is None):
+        job_ids = q_train.get_job_ids() +\
+                started_registry.get_job_ids()+\
+                finished_registry.get_job_ids()
+        job_ids = list(set(job_ids))
+        for job_id in job_ids:
+            job = q_train.fetch_job(job_id)
             job.delete()
-        if not (job_new is None):
-            job_new.delete()
         
-        return to_return, 200
+        return {'status' : 'ok'}, 200
 
 def get_job():
-    job = q_train.fetch_job(train_job_id)
-    job_new = q_train.fetch_job(train_new_job_id)
-    if not (job_new is None):
-        if not (job_new.get_status() in ['started','queued']):
-            job_finish=True
+    job_ids = q_train.get_job_ids() +\
+            started_registry.get_job_ids()+\
+            finished_registry.get_job_ids()
+    job_ids = list(set(job_ids))
+    sorted_job_ids = sort_id_time(job_ids, reverse=True)
+    model_available = False
+    for job_id in sorted_job_ids :
+        job = q_train.fetch_job(job_id)
+        if model_available:
             job.delete()
-            job_new.set_id(train_job_id)
-            job = job_new
-        elif job.get_status() in ['started','queued']:
-            job_finish=False
-        else :
-            job_finish=True
-
-
-
-    elif not (job is None):
-        if job.get_status() in ['started','queued']:
-            job_finish=False
         else:
-            job_finish=True
-    else:
-        job_finish=False
-    return job, job_finish
+            if not (job.get_status() in ['started','queued']):
+                model_available=True
+
+    return job, model_available
 
 @ns.route('/predict')
 class Predict(Resource):
@@ -259,7 +199,8 @@ class Predict(Resource):
         log.info("/predict prediction : %s"%(predict,))
 
         return {"status":"ok", "prediction":pred},200
-        # return prediction
+
+
     def get(self):
         
         job, job_finish = get_job()
