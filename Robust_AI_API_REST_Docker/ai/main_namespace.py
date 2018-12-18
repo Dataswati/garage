@@ -207,7 +207,7 @@ class Predict(Resource):
         job, job_finish = get_job()
         if not job_finish :
             log.debug("/predict : not trained yet")
-            return jsonify({'status':'ko', 'comment':'not trained yet'}), 401
+            return {'status':'ko', 'comment':'not trained yet'}, 401
 
         best_test_score, pipeline, input_columns= job.result
 
