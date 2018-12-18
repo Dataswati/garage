@@ -149,6 +149,7 @@ def get_job():
     job_ids = list(set(job_ids))
     sorted_job_ids = sort_id_time(job_ids, reverse=True)
     model_available = False
+    job = None
     for job_id in sorted_job_ids :
         job = q_train.fetch_job(job_id)
         if model_available:

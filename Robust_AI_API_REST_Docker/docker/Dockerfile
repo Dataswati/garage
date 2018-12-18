@@ -39,8 +39,8 @@ RUN echo "daemon off;" >> /etc/nginx/nginx.conf
 # supervisor log
 RUN mkdir -p /var/log/supervisor
 
-
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/supervisord"]
+# ENTRYPOINT ["/docker-entrypoint.sh"]
 
 # RUN pip3 install gunicorn
 #     pip3 install rq
