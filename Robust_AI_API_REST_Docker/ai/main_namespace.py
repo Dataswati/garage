@@ -79,12 +79,12 @@ class Train(Resource):
         """
         input_json = request.json
         if not ("target" in input_json.keys()):
-            log.bug("/train need a target to predict")
+            log.debug("/train need a target to predict")
             return {'status':'KO',
                     'comment':'need a target to predict'}, 401
         target = input_json["target"]
         if not ("csv_file_name" in input_json.keys()):
-            log.bug("/train need a csv file_name")
+            log.debug("/train need a csv file_name")
             return {'status':'KO',
                     'comment':'need a csv file_name'}, 401
         csv_file_name = input_json["csv_file_name"]
@@ -191,7 +191,7 @@ class Predict(Resource):
         job, job_finish = get_job()
 
         if not job_finish :
-            log.bug("/predict : not trained yet")
+            log.debug("/predict : not trained yet")
             return {'status':'ko', 'comment':'not trained yet'}, 401
 
         best_test_score, pipeline, input_columns= job.result
@@ -206,7 +206,7 @@ class Predict(Resource):
         
         job, job_finish = get_job()
         if not job_finish :
-            log.bug("/predict : not trained yet")
+            log.debug("/predict : not trained yet")
             return jsonify({'status':'ko', 'comment':'not trained yet'}), 401
 
         best_test_score, pipeline, input_columns= job.result
