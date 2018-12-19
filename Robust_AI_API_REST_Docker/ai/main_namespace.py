@@ -1,9 +1,10 @@
 import json, requests
 import logging
 import os
+from collections import OrderedDict
 
 from flask import request
-from flask_restplus import Resource, Namespace, reqparse
+from flask_restplus import Resource, Namespace, reqparse, fields
 
 from rq import Queue
 from rq.job import Job
@@ -35,48 +36,66 @@ def sort_id_time(list_id_time, id_time_format=id_time_format, reverse=False):
     return sorted_list
 
 
-ns = Namespace('/', description='housing prediction')
+ns = Namespace('/', description='')
 
-
-upload_parser = reqparse.RequestParser()
-upload_parser.add_argument("input",
-                           type=list,
-                           location="json",
-                           required=True)
-
+input_post_train = ns.model('input', {
+        'target': fields.String(
+            description="The target to predict present as a column in the csv", required=True),
+        'csv_file_name' : fields.String(
+            description="The name of the csv file present in de csv folder use for the training", required=True),
+        'input_columns' : fields.String(
+            description="The list of the columns that should be used as the input, if not specified", required=False),
+        'restart_train' : fields.Boolean(
+            description="if True delete the current training model to retrain on the new parameters", required=False)
+        })
+#             all the columns execpt the target will be used
+output_post_train_error = ns.model('output_train', {
+        'status': fields.String(
+            description="status of the request : OK/KO", required=True),
+        'comment': fields.String(
+            description="comment on KO", required=True)
+        })
+output_post_train = ns.model('output_train_error', {
+        'status': fields.String(
+            description="status of the request : OK/KO", required=True)
+        })
 
 @ns.route('/train')
 class Train(Resource):
-    @ns.doc(description='Start training on a csv file',
-            responses={
-                200: "Success",
-                400: "Bad request",
-                500: "Internal server error"
-                })
-    @ns.expect(upload_parser)
+    @ns.doc(description='train on the specified csv file with the specified target',# 'Start training on a csv file',
+#             responses={
+#                 200: "Success",
+#                 400: "Bad request",
+#                 500: "Internal server error"
+#                 },
+            body=input_post_train)
+    @ns.response(200,"Success",output_post_train)
+    @ns.response(401,"Bad request",output_post_train_error)
+    @ns.response(500,"Internal server error")
+    # @ns.expect(input_post_train)
     def post(self):
-        """
-        train on the specified csv file with the specified target
-
-        Input json keys 
-        ---------
-        target : str
-            the target to predict present as a column in the csv       
-        csv_file_name : str
-            the name of the csv file present in de csv folder use for the training
-        input_columns : str
-            the list of the columns that should be used as the input, if not specified
-            all the columns execpt the target will be used
-
-        Returned json keys 
-        ------------------
-        status : str
-             status of the request : OK/KO
-        comment : str
-             comment that can explain status:KO
-        test_score: float
-             R2 score of the model on a test set
-        """
+#         """
+#         train on the specified csv file with the specified target
+# 
+#         Input json keys 
+#         ---------
+#         target : str
+#             the target to predict present as a column in the csv       
+#         csv_file_name : str
+#             the name of the csv file present in de csv folder use for the training
+#         input_columns : str
+#             the list of the columns that should be used as the input, if not specified
+#             all the columns execpt the target will be used
+# 
+#         Returned json keys 
+#         ------------------
+#         status : str
+#              status of the request : OK/KO
+#         comment : str
+#              comment that can explain status:KO
+#         test_score: float
+#              R2 score of the model on a test set
+#         """
         input_json = request.json
         if not ("target" in input_json.keys()):
             log.debug("/train need a target to predict")
