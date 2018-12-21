@@ -38,64 +38,55 @@ def sort_id_time(list_id_time, id_time_format=id_time_format, reverse=False):
 
 ns = Namespace('/', description='')
 
-input_post_train = ns.model('input', {
-        'target': fields.String(
+input_post_train = ns.model('post train input', OrderedDict(
+        target=fields.String(
             description="The target to predict present as a column in the csv", required=True),
-        'csv_file_name' : fields.String(
+        csv_file_name=fields.String(
             description="The name of the csv file present in de csv folder use for the training", required=True),
-        'input_columns' : fields.String(
+        input_columns=fields.String(
             description="The list of the columns that should be used as the input, if not specified", required=False),
-        'restart_train' : fields.Boolean(
+        restart_train=fields.Boolean(
             description="if True delete the current training model to retrain on the new parameters", required=False)
-        })
+        ))
 #             all the columns execpt the target will be used
-output_post_train_error = ns.model('output_train', {
+output_error = ns.model('error output', {
         'status': fields.String(
-            description="status of the request : OK/KO", required=True),
+            description="status of the request : OK/KO"),
         'comment': fields.String(
-            description="comment on KO", required=True)
+            description="comment on KO")
         })
-output_post_train = ns.model('output_train_error', {
+output_standard = ns.model('standard output', {
         'status': fields.String(
-            description="status of the request : OK/KO", required=True)
+            description="status of the request : OK/KO")
         })
+output_get_train = ns.model('get train output',{
+        'status': fields.String(
+            description="status of the request : OK/KO"),
+        'model_available':fields.Boolean(
+            description="if True model is ready for prediction"),
+        'started_train':fields.List(fields.DateTime(),
+            description="list of datetime of started train on model"),
+        'finished_train':fields.List(fields.DateTime(),
+            description="list of datetime of finished train on model"),
+        'queued_train':fields.List(fields.DateTime(),
+            description="list of datetime of queued train on model")
+    })
+#         return {'status':"ok",
+#                 'training' : training,
+#                 'model_available' : model_available,
+#                 'started_train' : started_registry.get_job_ids(),
+#                 'finished_train' : finished_registry.get_job_ids(),
+#                 'queued_train' : q_train.get_job_ids()}, 200
 
 @ns.route('/train')
 class Train(Resource):
-    @ns.doc(description='train on the specified csv file with the specified target',# 'Start training on a csv file',
-#             responses={
-#                 200: "Success",
-#                 400: "Bad request",
-#                 500: "Internal server error"
-#                 },
+
+    @ns.doc(description='launch the train on the specified csv file with the specified target',
             body=input_post_train)
-    @ns.response(200,"Success",output_post_train)
-    @ns.response(401,"Bad request",output_post_train_error)
-    @ns.response(500,"Internal server error")
-    # @ns.expect(input_post_train)
+    @ns.response(200,"success",output_standard)
+    @ns.response(401,"bad request",output_error)
+    @ns.response(500,"internal server error")
     def post(self):
-#         """
-#         train on the specified csv file with the specified target
-# 
-#         Input json keys 
-#         ---------
-#         target : str
-#             the target to predict present as a column in the csv       
-#         csv_file_name : str
-#             the name of the csv file present in de csv folder use for the training
-#         input_columns : str
-#             the list of the columns that should be used as the input, if not specified
-#             all the columns execpt the target will be used
-# 
-#         Returned json keys 
-#         ------------------
-#         status : str
-#              status of the request : OK/KO
-#         comment : str
-#              comment that can explain status:KO
-#         test_score: float
-#              R2 score of the model on a test set
-#         """
         input_json = request.json
         if not ("target" in input_json.keys()):
             log.debug("/train need a target to predict")
@@ -123,7 +114,10 @@ class Train(Resource):
                     job_id=init_time_id(),args=(csv_path,),
                 kwargs={'target':target,'input_columns':input_columns},result_ttl=-1)
         return {'status':'ok'}, 200
-
+    @ns.doc(description='display the different queuing training or finished model by their timestamp id')
+    @ns.response(200,"success",output_get_train)
+    @ns.response(401,"bad request",output_error)
+    @ns.response(500,"internal server error")
     def get(self):
         job_ids = q_train.get_job_ids() +\
                 started_registry.get_job_ids()+\
@@ -149,6 +143,9 @@ class Train(Resource):
                 'queued_train' : q_train.get_job_ids()}, 200
 
 
+    @ns.doc(description='remove all models of the system')
+    @ns.response(200,"success",output_standard)
+    @ns.response(500,"internal server error")
     def delete(self):
 
         job_ids = q_train.get_job_ids() +\
@@ -179,32 +176,33 @@ def get_job():
 
     return job, model_available
 
+input_post_predict = ns.model('post predict input', {
+    "key_1":fields.Float(
+            description="input value corresponding to key_1", required=True),
+    "key_2":fields.Float(
+            description="input value corresponding to key_2", required=True)
+        },description="key:value were key are the input_columns keys that are returned by method get on route predict")
+
+output_post_predict = ns.model('post predict output', {
+        'status': fields.String(
+            description="status of the request : OK/KO"),
+        'prediction' : fields.Float(descripition='the prediction value')
+        })
+output_get_predict = ns.model('post predict output', {
+        'status': fields.String(
+            description="status of the request : OK/KO"),
+        'input_names' : fields.List(fields.String(descripition='the input keys'))
+        })
+
 @ns.route('/predict')
 class Predict(Resource):
+
     @ns.doc(description='Predict from json input',
-            responses={
-                200: "Success",
-                400: "Bad request",
-                500: "Internal server error"
-                })
-    @ns.expect(upload_parser)
+            body=input_post_predict)
+    @ns.response(200,"success",output_post_predict)
+    @ns.response(401,"bad request",output_error)
+    @ns.response(500,"internal server error")
     def post(self):
-        """
-        predict the value from a json
-
-        Input json keys 
-        ---------------
-        key:value were key are the input_columns keys that can be get on the route /available_input
-
-        Returned json keys 
-        ------------------
-        status : str
-             status of the request : OK/KO
-        comment : str
-             comment that can explain status:KO
-        prediction: float
-             the prediction
-        """
         to_predict = request.json
         log.info("predict input : \n %s"%(repr(to_predict),))
         job, job_finish = get_job()
@@ -214,6 +212,8 @@ class Predict(Resource):
             return {'status':'ko', 'comment':'not trained yet'}, 401
 
         best_test_score, pipeline, input_columns= job.result
+        if set(to_predict.keys())!= set(input_columns):
+            return {'status':'ko', 'comment':'input keys do not match model keys'}, 400
         pred = predict(to_predict, input_columns=input_columns,
                 model=pipeline)
         log.info("/predict prediction : %s"%(predict,))
@@ -221,6 +221,10 @@ class Predict(Resource):
         return {"status":"ok", "prediction":pred},200
 
 
+    @ns.doc(description='Return the input key of the model')
+    @ns.response(200,"success",output_get_predict)
+    @ns.response(401,"bad request",output_error)
+    @ns.response(500,"internal server error")
     def get(self):
         
         job, job_finish = get_job()

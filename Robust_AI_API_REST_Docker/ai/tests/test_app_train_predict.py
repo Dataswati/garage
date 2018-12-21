@@ -2,9 +2,15 @@ from flask import url_for
 import time
 
 def test_train_predict_route(client):
-    if False :
+
+
+    if True :
         res = client.delete(url_for('API./_train'))
         assert res.status_code == 200,res.status_code
+
+        get_predict = client.post(url_for('API./_predict'))
+        assert get_predict.json['status']=='ko'
+        assert get_predict.json['comment']=='not trained yet'
 
         res=client.post(url_for('API./_train'),
                         json={"target":"price",

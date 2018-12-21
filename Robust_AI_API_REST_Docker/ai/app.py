@@ -49,6 +49,7 @@ def initialize_app(flask_app):
     api.init_app(blueprint)
     
     # init main_namespace
+    api.namespaces.clear()
     api.add_namespace(main_namespace)
 
     flask_app.register_blueprint(blueprint)
