@@ -25,7 +25,7 @@ RUN pip3 install --upgrade pip && \
 
 # nginx 
 RUN rm /etc/nginx/sites-enabled/default
-ADD ./nginx_flask_proxy.conf /etc/nginx/sites-enabled/
+ADD ./src/nginx_flask_proxy.conf /etc/nginx/sites-enabled/
 RUN echo "daemon off;" >> /etc/nginx/nginx.conf
 
 # supervisor log
