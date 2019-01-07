@@ -165,16 +165,17 @@ def get_job():
     job_ids = list(set(job_ids))
     sorted_job_ids = sort_id_time(job_ids, reverse=True)
     model_available = False
-    job = None
+    last_job = None
     for job_id in sorted_job_ids :
         job = q_train.fetch_job(job_id)
         if model_available:
             job.delete()
         else:
             if not (job.get_status() in ['started','queued']):
+                last_job = job
                 model_available=True
 
-    return job, model_available
+    return last_job, model_available
 
 input_post_predict = ns.model('post predict input', {
     "key_1":fields.Float(

@@ -1,1 +1,1 @@
-sudo docker exec -it docker_flask_1 bash -c "supervisorctl restart all"
+sudo docker exec -it house_prediction_REST_API bash -c "supervisorctl restart all"

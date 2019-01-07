@@ -3,6 +3,7 @@ version: "2"
 services:
   flask:
     build : .
+    container_name: house_prediction_REST_API
     volumes : 
      - "../ai/:/srv/"
      - "./src/:/src/"
