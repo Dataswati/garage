@@ -24,7 +24,7 @@ MarkupSafe==1.0
 matplotlib==2.2.2
 more-itertools==4.3.0
 nbformat==4.4.0
-numpy==1.15.0
+numpy==1.22.0
 pandas==0.23.4
 pandas-profiling==1.4.1
 parso==0.3.1
